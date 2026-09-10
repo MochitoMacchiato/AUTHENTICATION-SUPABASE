@@ -1,8 +1,10 @@
 import os
 from dotenv import load_dotenv
 from supabase import create_client, Client
-from fastapi import FastAPI, status, HTTPException
+from fastapi import FastAPI, status, HTTPException, Header
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
+from fastapi.requests import Request
 from pydantic import BaseModel
 
 load_dotenv()
@@ -13,6 +15,13 @@ SUPABASE_KEY = os.environ.get("SUPABASE_KEY")
 supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 app = FastAPI()
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    return JSONResponse(
+        status_code=status.HTTP_400_BAD_REQUEST,
+        content={"error": "Email and password are required"},
+    )
 
 @app.on_event("startup")
 async def startup_event():
@@ -70,3 +79,27 @@ def user_login(user_credential: UserCredential):
             status_code=status.HTTP_401_UNAUTHORIZED,
             content={"error": "Invalid login credentials"}
         )
+
+@app.get(
+    "/public/info",
+    status_code=status.HTTP_200_OK,
+    summary="Public lobby, anyone can enter"
+)
+def public_lobby():
+    return { "message": "Welcome stranger! This info is public." }
+
+@app.get(
+    "/protected/profile",
+    status_code=status.HTTP_200_OK,
+    summary="Private lobby, needs permission to enter."
+)
+def private_lobby(authorization: str = Header(default=None)):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail={"error": "Access token required"}
+        )
+    
+    token = authorization.split(" ")[1]
+
+    return {"message": "Token received", "token": token}
